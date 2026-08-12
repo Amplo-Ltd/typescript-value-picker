@@ -1,0 +1,62 @@
+{
+  "name": "typescript-value-picker",
+  "displayName": "TypeScript Value Picker",
+  "description": "Provides quick controls for finite TypeScript literal unions and enum members.",
+  "version": "0.0.1",
+  "publisher": "local-development",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.65.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:typescript",
+    "onLanguage:typescriptreact",
+    "onCommand:typescriptValuePicker.change",
+    "onCommand:typescriptValuePicker.apply"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "typescriptValuePicker.change",
+        "title": "TypeScript Value Picker: Change Value"
+      },
+      {
+        "command": "typescriptValuePicker.apply",
+        "title": "TypeScript Value Picker: Apply Value"
+      }
+    ],
+    "configuration": {
+      "title": "TypeScript Value Picker",
+      "properties": {
+        "typescriptValuePicker.positionMode": {
+          "type": "string",
+          "default": "inline",
+          "enum": [
+            "link",
+            "inline",
+            "above"
+          ],
+          "enumDescriptions": [
+            "Show a clickable Change value inlay link. VS Code may require a modifier-click.",
+            "Show one visual Change value decoration per line; hover the actual value to open its picker.",
+            "Show a clickable CodeLens above each target."
+          ],
+          "description": "Controls where the TypeScript value picker is displayed."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^14.14.31",
+    "@types/vscode": "1.65.0",
+    "typescript": "3.9.7"
+  }
+}
