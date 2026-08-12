@@ -1,32 +1,28 @@
 # TypeScript Value Picker
 
-VS Code extension for TypeScript projects. It provides quick, safe value
-selection without changing the surrounding application code.
+Quickly switch between finite TypeScript values directly in the editor.
+TypeScript Value Picker provides lightweight controls for literal unions and
+enum members while keeping the surrounding source code unchanged.
 
-It adds a `Change value` control for values
-whose type has a finite set of choices. This includes literal unions and enum
-members. The available choices are resolved from the TypeScript type checker.
+## Features
 
-## Display modes
+- Pick from string, number, boolean, `null`, `undefined`, and bigint unions.
+- Pick from regular and `const enum` members.
+- Handle multiple selectable values independently on the same line.
+- Use safe, anchor-based replacements that refuse ambiguous edits.
+- Choose between inline, link, and CodeLens presentation modes.
 
-The display mode can be changed with `typescriptValuePicker.positionMode`:
+## Usage
 
-- `inline` (default) - shows one visual `Change value` decoration per line.
-  The actual value expression is the hover target, so multiple values on the
-  same line each open their own picker.
-- `link` - shows a clickable `Change value` inlay link. With one target it is
-  placed at the end of the line; with multiple targets, each link is placed
-  beside its target. VS Code may require a modifier-click for inlay links.
-- `above` - shows a clickable CodeLens above each target.
+Open a TypeScript or TSX file containing a finite union or enum value. The
+available picker depends on the configured display mode.
 
 ```ts
 type Environment = 'Production' | 'Staging' | 'Debug';
 type RetryCount = 0 | 1 | 2;
-type Result = 'Success' | 'Failed' | null;
 
 const environment: Environment = 'Debug';
 const retryCount: RetryCount = 1;
-const result: Result = null;
 
 enum DeploymentEnvironment {
   Production,
@@ -37,7 +33,8 @@ enum DeploymentEnvironment {
 const deploymentEnvironment: DeploymentEnvironment = DeploymentEnvironment.Debug;
 ```
 
-Multiple values on one line are handled independently:
+Multiple values on one line are handled independently. In inline mode, hover
+the actual value you want to change:
 
 ```ts
 this.status = user.isActive
@@ -45,30 +42,37 @@ this.status = user.isActive
   : ActiveStatuses.Inactive;
 ```
 
+## Display modes
+
+Configure `typescriptValuePicker.positionMode` in VS Code settings:
+
+- `inline` (default) - shows one visual `Change value` decoration per line.
+  The actual value expression is the hover target.
+- `link` - shows a clickable `Change value` inlay link. With one target it is
+  placed at the end of the line; with multiple targets, each link is placed
+  beside its target. VS Code may require a modifier-click for inlay links.
+- `above` - shows a clickable CodeLens above each target.
+
 ## Supported values
 
 Literal unions can contain string, number, boolean, `null`, `undefined`, and
-bigint literal members. Regular and `const enum` member references are also
-supported, including qualified references such as
-`RequestType.NewClientRegistration`.
+bigint literal members. Enum member references are also supported, including
+qualified references such as `RequestType.NewClientRegistration`.
 
-Plain `string` and `number` types are intentionally ignored because they do
-not provide a finite list of safe choices.
+Plain `string` and `number` types are ignored because they do not provide a
+finite list of choices.
 
-## Safe replacement behavior
+The TypeScript project must be resolvable through a `tsconfig.json` or
+`tsconfig.app.json` file.
 
-The extension stores a small anchor around the original value and validates
-the current source before applying a replacement. If the original value cannot
-be located uniquely, it refuses to edit and shows a warning instead of risking
-changes to surrounding code.
+## Safe replacements
 
-## Requirements
-
-- A TypeScript or TSX file.
-- A discoverable `tsconfig.json` or `tsconfig.app.json` in the workspace.
-- A finite union or enum type that the TypeScript project can resolve.
+Before applying a selection, the extension validates the original value and
+its surrounding source anchor. If the value cannot be located uniquely, no
+edit is made and a warning is shown. This prevents a selection from changing
+commas, neighboring values, or unrelated text.
 
 ## Installation
 
-Install `TypeScript Value Picker` from the VS Code Extensions view after it is
-published to the Marketplace.
+Search for **TypeScript Value Picker** in the VS Code Extensions view and
+select **Install**.
