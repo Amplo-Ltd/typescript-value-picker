@@ -5,6 +5,7 @@
   "version": "0.0.1",
   "publisher": "amplo",
   "license": "MIT",
+  "icon": "images/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/Amplo-Ltd/typescript-value-picker.git"
@@ -73,9 +74,11 @@
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile"
   },
+  "dependencies": {
+    "typescript": "3.9.7"
+  },
   "devDependencies": {
     "@types/node": "^14.14.31",
-    "@types/vscode": "1.65.0",
-    "typescript": "3.9.7"
+    "@types/vscode": "1.65.0"
   }
 }
