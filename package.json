@@ -3,8 +3,26 @@
   "displayName": "TypeScript Value Picker",
   "description": "Provides quick controls for finite TypeScript literal unions and enum members.",
   "version": "0.0.1",
-  "publisher": "local-development",
+  "publisher": "amplo",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Amplo-Ltd/typescript-value-picker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Amplo-Ltd/typescript-value-picker/issues"
+  },
+  "homepage": "https://github.com/Amplo-Ltd/typescript-value-picker#readme",
+  "keywords": [
+    "typescript",
+    "union types",
+    "enums",
+    "developer tools"
+  ],
+  "galleryBanner": {
+    "color": "#1f2937",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.65.0"
   },
@@ -52,7 +70,8 @@
   },
   "scripts": {
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {
     "@types/node": "^14.14.31",
