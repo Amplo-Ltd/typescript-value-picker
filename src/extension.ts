@@ -26,6 +26,7 @@ type ValueTarget = {
 };
 
 type PositionMode = 'link' | 'inline' | 'above';
+type QuoteStyle = 'auto' | 'single' | 'double';
 
 type DecorationState = {
   version: number;
@@ -44,6 +45,61 @@ function getPositionMode(): PositionMode {
     .get<string>('positionMode', 'inline');
 
   return value === 'link' || value === 'above' ? value : 'inline';
+}
+
+function getQuoteStyle(document: vscode.TextDocument): QuoteStyle {
+  const sharedValue = vscode.workspace
+    .getConfiguration('js/ts.preferences', document.uri)
+    .get<string>('quoteStyle');
+
+  if (sharedValue === 'auto' ||
+      sharedValue === 'single' ||
+      sharedValue === 'double') {
+    return sharedValue;
+  }
+
+  const value = vscode.workspace
+    .getConfiguration('typescript.preferences', document.uri)
+    .get<string>('quoteStyle', 'auto');
+
+  return value === 'single' || value === 'double' ? value : 'auto';
+}
+
+function getQuoteCharacter(
+  node: ts.StringLiteral,
+  quoteStyle: QuoteStyle
+): 'single' | 'double' {
+  if (quoteStyle === 'single' || quoteStyle === 'double') {
+    return quoteStyle;
+  }
+
+  const sourceText = node.getText();
+
+  if (sourceText[0] === "'") {
+    return 'single';
+  }
+
+  if (sourceText[0] === '"') {
+    return 'double';
+  }
+
+  return 'double';
+}
+
+function formatStringLiteral(
+  value: string,
+  quoteCharacter: 'single' | 'double'
+): string {
+  const jsonText = JSON.stringify(value);
+
+  if (quoteCharacter === 'double') {
+    return jsonText;
+  }
+
+  return "'" + jsonText
+    .slice(1, -1)
+    .replace(/\\"/g, '"')
+    .replace(/'/g, "\\'") + "'";
 }
 
 const literalSourcePattern = /^(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|-?(?:0[xX][0-9a-fA-F]+|0[bB][01]+|0[oO][0-7]+|(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)(?:n)?|true|false|null|undefined)$/;
@@ -300,14 +356,19 @@ function createLanguageService(
 
 function getLiteralChoice(
   type: ts.Type,
-  checker: ts.TypeChecker
+  checker: ts.TypeChecker,
+  quoteStyle: QuoteStyle,
+  node: ts.StringLiteral
 ): ValueChoice | undefined {
   if (type.flags & ts.TypeFlags.StringLiteral) {
     const value = (type as ts.StringLiteralType).value;
 
     return {
       label: value,
-      sourceText: JSON.stringify(value)
+      sourceText: formatStringLiteral(
+        value,
+        getQuoteCharacter(node, quoteStyle)
+      )
     };
   }
 
@@ -357,7 +418,8 @@ function getLiteralChoice(
 
 function getLiteralChoices(
   checker: ts.TypeChecker,
-  node: ts.Expression
+  node: ts.Expression,
+  quoteStyle: QuoteStyle
 ): ValueChoice[] {
   const contextualType = checker.getContextualType(node);
 
@@ -372,7 +434,20 @@ function getLiteralChoices(
     return [];
   }
 
-  const choices = members.map(member => getLiteralChoice(member, checker));
+  if (!ts.isStringLiteral(node) && members.some(member =>
+    member.flags & ts.TypeFlags.StringLiteral
+  )) {
+    return [];
+  }
+
+  const choices = members.map(member =>
+    getLiteralChoice(
+      member,
+      checker,
+      quoteStyle,
+      node as ts.StringLiteral
+    )
+  );
 
   if (choices.some(choice => !choice)) {
     return [];
@@ -501,10 +576,15 @@ type ValueAnalysis = {
 function getValueAnalysis(
   checker: ts.TypeChecker,
   node: ts.Node,
-  sourceFile: ts.SourceFile
+  sourceFile: ts.SourceFile,
+  quoteStyle: QuoteStyle
 ): ValueAnalysis | undefined {
   if (isLiteralCandidate(node)) {
-    const choices = getLiteralChoices(checker, node as ts.Expression);
+    const choices = getLiteralChoices(
+      checker,
+      node as ts.Expression,
+      quoteStyle
+    );
 
     return choices.length > 0
       ? { kind: 'literal', choices }
@@ -572,6 +652,7 @@ function collectInlayHints(
 ): { hints: vscode.InlayHint[]; targets: ValueTarget[] } {
   const hints: vscode.InlayHint[] = [];
   const targets: ValueTarget[] = [];
+  const quoteStyle = getQuoteStyle(document);
 
   function visit(node: ts.Node): void {
     if (lineRange) {
@@ -584,7 +665,7 @@ function collectInlayHints(
       }
     }
 
-    const analysis = getValueAnalysis(checker, node, sourceFile);
+    const analysis = getValueAnalysis(checker, node, sourceFile, quoteStyle);
 
     if (analysis) {
       const start = document.positionAt(node.getStart(sourceFile));
@@ -1400,7 +1481,10 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
     vscode.workspace.onDidChangeConfiguration(event => {
-      if (event.affectsConfiguration('typescriptValuePicker.positionMode')) {
+      if (event.affectsConfiguration('typescriptValuePicker.positionMode') ||
+          event.affectsConfiguration('js/ts.preferences.quoteStyle') ||
+          event.affectsConfiguration('typescript.preferences.quoteStyle') ||
+          event.affectsConfiguration('javascript.preferences.quoteStyle')) {
         provider.scheduleRefresh();
       }
     }),
