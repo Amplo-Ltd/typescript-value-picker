@@ -233,9 +233,17 @@ function createLanguageService(
     return previous;
   }
 
+  // Keep the editor service focused on open files and their imports. The
+  // Angular app tsconfig roots main.ts, which pulls the entire application
+  // into the first program and makes opening an unrelated file expensive.
+  // Declaration files remain roots so project-wide ambient types are still
+  // available to the checker.
+  const rootNames = parsed.fileNames.filter(fileName =>
+    fileName.toLowerCase().endsWith('.d.ts')
+  );
   const state: LanguageServiceState = {
-    rootNames: parsed.fileNames.slice(),
-    rootNameSet: new Set(parsed.fileNames.map(fileName => fileKey(fileName))),
+    rootNames,
+    rootNameSet: new Set(rootNames.map(fileName => fileKey(fileName))),
     openFiles: new Map<string, string>(),
     openVersions: new Map<string, number>()
   };
@@ -656,11 +664,17 @@ class ValuePickerPositionProvider implements
   private readonly languageServiceCache = new Map<string, ProjectLanguageServiceCache>();
   private readonly lensCache = new Map<string, {
     version: number;
+    projectRevision: number;
     lenses: vscode.InlayHint[];
     analyzedRange?: LineRange;
   }>();
-  private readonly targetCache = new Map<string, { version: number; targets: ValueTarget[] }>();
+  private readonly targetCache = new Map<string, {
+    version: number;
+    projectRevision: number;
+    targets: ValueTarget[];
+  }>();
   private readonly documentProjectCache = new Map<string, string>();
+  private readonly projectRevision = new Map<string, number>();
   private readonly decorationState = new WeakMap<vscode.TextEditor, DecorationState>();
   private positionMode: PositionMode = getPositionMode();
   private readonly inlineDecorationType = vscode.window.createTextEditorDecorationType({
@@ -691,10 +705,14 @@ class ValuePickerPositionProvider implements
     const documentKey = document.uri.toString();
     const mode = this.positionMode;
     const cachedLenses = this.lensCache.get(documentKey);
+    const projectPath = this.documentProjectCache.get(documentKey) ||
+      this.getConfigPath(document.fileName);
+    const currentProjectRevision = this.getProjectRevision(projectPath);
 
     const cachedRangeIsValid = cachedLenses &&
       cachedLenses.version === document.version &&
-      (mode !== 'link' || containsLineRange(cachedLenses.analyzedRange, range));
+      cachedLenses.projectRevision === currentProjectRevision &&
+      (mode === 'above' || containsLineRange(cachedLenses.analyzedRange, range));
 
     if (cachedRangeIsValid && cachedLenses) {
       return mode === 'above' ? [] : cachedLenses.lenses;
@@ -709,7 +727,7 @@ class ValuePickerPositionProvider implements
     this.scheduleAnalysis(
       document,
       0,
-      mode === 'link' ? toLineRange(range) : undefined
+      mode === 'above' ? undefined : toLineRange(range)
     );
     return cachedRangeIsValid && cachedLenses ? cachedLenses.lenses : [];
   }
@@ -747,9 +765,17 @@ class ValuePickerPositionProvider implements
         return;
       }
 
+      const previousTargets = this.targetCache.get(documentKey);
       this.analyzeDocument(currentDocument, requestedRange);
-      this.refreshVisibleDecorations();
-      this.changeEmitter.fire();
+      const updatedTargets = this.targetCache.get(documentKey);
+      const targetsChanged = !previousTargets || !updatedTargets ||
+        getDecorationSignature(previousTargets.targets) !==
+        getDecorationSignature(updatedTargets.targets);
+
+      if (targetsChanged) {
+        this.refreshVisibleDecorations();
+        this.changeEmitter.fire();
+      }
     }, delay);
 
     this.analysisTimers.set(documentKey, timer);
@@ -765,10 +791,15 @@ class ValuePickerPositionProvider implements
       this.documentProjectCache.delete(documentKey);
       this.lensCache.set(documentKey, {
         version: document.version,
+        projectRevision: 0,
         lenses: [],
         analyzedRange: requestedRange
       });
-      this.targetCache.set(documentKey, { version: document.version, targets: [] });
+      this.targetCache.set(documentKey, {
+        version: document.version,
+        projectRevision: 0,
+        targets: []
+      });
       return;
     }
 
@@ -781,10 +812,15 @@ class ValuePickerPositionProvider implements
         this.documentProjectCache.delete(documentKey);
         this.lensCache.set(documentKey, {
           version: document.version,
+          projectRevision: 0,
           lenses: [],
           analyzedRange: requestedRange
         });
-        this.targetCache.set(documentKey, { version: document.version, targets: [] });
+        this.targetCache.set(documentKey, {
+          version: document.version,
+          projectRevision: 0,
+          targets: []
+        });
         return;
       }
 
@@ -792,6 +828,7 @@ class ValuePickerPositionProvider implements
     }
 
     this.documentProjectCache.set(documentKey, configPath);
+    const currentProjectRevision = this.getProjectRevision(configPath);
 
     let project = this.languageServiceCache.get(configPath);
 
@@ -808,10 +845,15 @@ class ValuePickerPositionProvider implements
     if (!program) {
       this.lensCache.set(documentKey, {
         version: document.version,
+        projectRevision: currentProjectRevision,
         lenses: [],
         analyzedRange: requestedRange
       });
-      this.targetCache.set(documentKey, { version: document.version, targets: [] });
+      this.targetCache.set(documentKey, {
+        version: document.version,
+        projectRevision: currentProjectRevision,
+        targets: []
+      });
       return;
     }
 
@@ -823,10 +865,15 @@ class ValuePickerPositionProvider implements
     if (!sourceFile) {
       this.lensCache.set(documentKey, {
         version: document.version,
+        projectRevision: currentProjectRevision,
         lenses: [],
         analyzedRange: requestedRange
       });
-      this.targetCache.set(documentKey, { version: document.version, targets: [] });
+      this.targetCache.set(documentKey, {
+        version: document.version,
+        projectRevision: currentProjectRevision,
+        targets: []
+      });
       return;
     }
 
@@ -835,15 +882,20 @@ class ValuePickerPositionProvider implements
       sourceFile,
       program.getTypeChecker(),
       mode,
-      mode === 'link' ? requestedRange : undefined
+      mode === 'above' ? undefined : requestedRange
     );
 
     this.lensCache.set(documentKey, {
       version: document.version,
+      projectRevision: currentProjectRevision,
       lenses: result.hints,
       analyzedRange: requestedRange
     });
-    this.targetCache.set(documentKey, { version: document.version, targets: result.targets });
+    this.targetCache.set(documentKey, {
+      version: document.version,
+      projectRevision: currentProjectRevision,
+      targets: result.targets
+    });
   }
 
   public provideCodeLenses(
@@ -863,8 +915,13 @@ class ValuePickerPositionProvider implements
     );
 
     const cached = this.targetCache.get(document.uri.toString());
+    const projectPath = this.documentProjectCache.get(document.uri.toString()) ||
+      this.getConfigPath(document.fileName);
+    const currentProjectRevision = this.getProjectRevision(projectPath);
 
-    if (!cached || cached.version !== document.version) {
+    if (!cached ||
+        cached.version !== document.version ||
+        cached.projectRevision !== currentProjectRevision) {
       return [];
     }
 
@@ -925,6 +982,11 @@ class ValuePickerPositionProvider implements
     this.lensCache.clear();
     this.targetCache.clear();
     this.documentProjectCache.clear();
+    this.projectRevision.clear();
+  }
+
+  private getProjectRevision(projectPath: string | undefined): number {
+    return projectPath ? this.projectRevision.get(projectPath) || 0 : 0;
   }
 
   public scheduleDocumentRefresh(document: vscode.TextDocument): void {
@@ -933,18 +995,38 @@ class ValuePickerPositionProvider implements
       this.getConfigPath(document.fileName);
 
     if (projectPath) {
-      this.documentProjectCache.forEach((cachedProjectPath, cachedDocumentKey) => {
-        if (cachedProjectPath === projectPath) {
-          this.lensCache.delete(cachedDocumentKey);
-          this.targetCache.delete(cachedDocumentKey);
-        }
-      });
+      this.projectRevision.set(
+        projectPath,
+        this.getProjectRevision(projectPath) + 1
+      );
     } else {
       this.lensCache.delete(documentKey);
       this.targetCache.delete(documentKey);
     }
 
-    this.scheduleAnalysis(document, 250, this.getVisibleLineRange(document));
+    this.scheduleAnalysis(
+      document,
+      250,
+      this.positionMode === 'above' ? undefined : this.getVisibleLineRange(document)
+    );
+  }
+
+  public scheduleVisibleRangeRefresh(): void {
+    if (this.positionMode !== 'inline') {
+      return;
+    }
+
+    this.clearInlineDecorations();
+
+    vscode.window.visibleTextEditors.forEach(editor => {
+      if (supportedLanguageIds.has(editor.document.languageId)) {
+        this.scheduleAnalysis(
+          editor.document,
+          0,
+          this.getVisibleLineRange(editor.document)
+        );
+      }
+    });
   }
 
   private getVisibleLineRange(document: vscode.TextDocument): LineRange | undefined {
@@ -967,6 +1049,17 @@ class ValuePickerPositionProvider implements
 
   public syncOpenDocument(document: vscode.TextDocument): void {
     const text = document.getText();
+    const documentKey = document.uri.toString();
+    const projectPath = this.documentProjectCache.get(documentKey) ||
+      this.getConfigPath(document.fileName);
+    const project = projectPath
+      ? this.languageServiceCache.get(projectPath)
+      : undefined;
+
+    if (project) {
+      syncOpenFile(project.state, document, text);
+      return;
+    }
 
     this.languageServiceCache.forEach(project => {
       syncOpenFile(project.state, document, text);
@@ -983,6 +1076,9 @@ class ValuePickerPositionProvider implements
 
       const cached = this.targetCache.get(editor.document.uri.toString());
       const currentState = this.decorationState.get(editor);
+      const projectPath = this.documentProjectCache.get(editor.document.uri.toString()) ||
+        this.getConfigPath(editor.document.fileName);
+      const currentProjectRevision = this.getProjectRevision(projectPath);
 
       if (mode !== 'inline') {
         if (!currentState || currentState.mode === 'inline') {
@@ -994,7 +1090,9 @@ class ValuePickerPositionProvider implements
         return;
       }
 
-      if (!cached || cached.version !== editor.document.version) {
+      if (!cached ||
+          cached.version !== editor.document.version ||
+          cached.projectRevision !== currentProjectRevision) {
         return;
       }
 
@@ -1286,6 +1384,7 @@ export function activate(context: vscode.ExtensionContext): void {
       provider.refreshVisibleDecorations();
     }),
     vscode.window.onDidChangeTextEditorVisibleRanges(() => {
+      provider.scheduleVisibleRangeRefresh();
       provider.refreshVisibleDecorations();
     }),
     vscode.workspace.onDidOpenTextDocument(document => {

@@ -2,7 +2,7 @@
   "name": "typescript-value-picker",
   "displayName": "TypeScript Value Picker",
   "description": "Provides quick controls for finite TypeScript literal unions and enum members.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "amplo",
   "license": "MIT",
   "icon": "images/icon.png",
